@@ -55,18 +55,42 @@ class AttentionBasedMultiModalFusion(nn.Module):
         attn_img = nn.Linear(self.output_size + self.embedding_img, self.max_length_img)
         attn_q = nn.Linear(self.output_size + self.embedding_q, self.max_length_q)
 
-        attn_mod = nn.Linear(self.embedding_q + self.embedding_img, self.max_modalities)
+        attn_mod = nn.Linear(self.embedding_q+ self.embedding_img, self.max_modalities)
         
         fusion_img = nn.Linear(self.embedding_img, self.hidden_size)
         fusion_q = nn.Linear(self.embedding_q, self.hidden_size)
 
         fusion = nn.Linear(self.output_size + self.hidden_size, self.output_size)
         self.decoder = nn.LSTM(self.output_size, self.vocab_length)
+        #init hidden for decoder
 
     def forward(self, inputs, hidden):
        
         img_emb = self.VideoEmbedding(inputs[0])
         q_emb = self.QuestionEmbedding(inputs[1])
 
-        img_attn_weights = F.softmax(self.attn_img(torch.cat(())
+        img_attn_weights = F.softmax(self.attn_img(torch.cat((img_emb,
+            self.prev_output), 1)), dim = 1)
+        q_attn_weights = F.softmax(self.attn_q(torch.cat((q_emb,
+            self.prev_output), 1)), dim = 1)
 
+        img_attn_applied = torch.bmm(img_attn_weights.unsqueeze(0),
+                img_emb.unsqueeze(0))
+        q_attn_applied = torch.bmm(q_attn_weights.unsqueeze(0),
+                q_emb.unsqueeze(0))
+
+        mod_attn_weights = F.softmax(self.attn_mod_img(torch.cat((img_emb, #concatenate img_emb with q_emb, how that I am not sure of
+            self.prev_output), 1)), dim = 1)
+
+        fs_img = fusion_img(self.embedding_img)
+        fs_q = fusion_q(self.embedding_q)
+
+        fs_apply = torch.bmm(mod_attn_weights.unsqueeze(0),
+                torch.cat((img_emb, q_emb), dim = 1).unsqueeze(0)) #this should be done above, but not sure of dimensions
+
+        fs_output = fusion(torch.cat((self.prev_output, fs_apply), dim = 1))
+
+        output, hidden = self.decoder(fs_output, hidden)
+       
+        self.prev_output = output
+        return output, hidden
