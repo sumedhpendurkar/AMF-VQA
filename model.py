@@ -17,21 +17,39 @@ class VideoEmbedding(nn.Module):
         
         self.lstm = nn.LSTM(input_dim, embedding_dim, num_layers=1, bidirectional=birdirectional)
         
-    def forward(self, inputs):
+    def forward(self, inputs, hidden):
 
         #maybe reshape it
-        outputs, _ = self.lstm(inputs)
+        outputs, _ = self.lstm(inputs, hidden)
         return outputs
+
+    def init_hidden(self):
+        # Before we've done anything, we dont have any hidden state.
+        # Refer to the Pytorch documentation to see exactly
+        # why they have this dimensionality.
+        # The axes semantics are (num_layers, minibatch_size, hidden_dim)
+        return (torch.zeros(1, 1, self.embedding_dim),
+                torch.zeros(1, 1, self.embedding_dim))
+
 
 class WordEmbedding(nn.Module):
 
     def __init__(self, embedding_dim, input_dim, bidirectional = True):
         self.lstm = nn.LSTM(input_dim, embedding_dim, num_layers = 1, bidirectional = birdirectional)
 
-    def forward(self, inputs, h):
+    def forward(self, inputs, hidden):
 
-        outputs, _ = self.lstm(inputs)
+        outputs, _ = self.lstm(inputs, hidden)
         return outputs
+    
+    def init_hidden(self):
+        # Before we've done anything, we dont have any hidden state.
+        # Refer to the Pytorch documentation to see exactly
+        # why they have this dimensionality.
+        # The axes semantics are (num_layers, minibatch_size, hidden_dim)
+        return (torch.zeros(1, 1, self.embedding_dim),
+                torch.zeros(1, 1, self.embedding_dim))
+
         
 class AttentionBasedMultiModalFusion(nn.Module):
 
@@ -51,6 +69,8 @@ class AttentionBasedMultiModalFusion(nn.Module):
 
         self.VideoEmbedding = VideoEmbedding(self.embedding_img, self.input_img)
         self.QuestionEmbedding = WordEmbedding(self.embedding_q, self.input_q)
+        self.hidden_img = self.VideoEmbedding.init_hidden()
+        self.hidden_q = self.QuestionEmbedding.init_hidden()
 
         attn_img = nn.Linear(self.output_size + self.embedding_img, self.max_length_img)
         attn_q = nn.Linear(self.output_size + self.embedding_q, self.max_length_q)
@@ -63,16 +83,17 @@ class AttentionBasedMultiModalFusion(nn.Module):
         fusion = nn.Linear(self.output_size + self.hidden_size, self.output_size)
         self.decoder = nn.LSTM(self.output_size, self.vocab_length)
         #init hidden for decoder
+        self.decoder_hidden = torch.zeros(1, 1, self.vocab_length), torch.zeros(1, 1, self.vocab_length)
 
-    def forward(self, inputs, hidden):
+    def forward(self, inputs):
        
-        img_emb = self.VideoEmbedding(inputs[0])
-        q_emb = self.QuestionEmbedding(inputs[1])
+        img_emb, self.hidden_img = self.VideoEmbedding(inputs[0], self.hidden_img)
+        q_emb, self.hidden_q = self.QuestionEmbedding(inputs[1], self.hidden_q)
 
-        img_attn_weights = F.softmax(self.attn_img(torch.cat((img_emb,
-            self.prev_output), 1)), dim = 1)
-        q_attn_weights = F.softmax(self.attn_q(torch.cat((q_emb,
-            self.prev_output), 1)), dim = 1)
+        img_attn_weights = F.softmax(self.attn_img(torch.cat((self.hidden_img,  #should be hidden_img?
+            self.decoder_hidden), 1)), dim = 1)
+        q_attn_weights = F.softmax(self.attn_q(torch.cat((self.hidden_q,
+            self.decoder_hidden), 1)), dim = 1)
 
         img_attn_applied = torch.bmm(img_attn_weights.unsqueeze(0),
                 img_emb.unsqueeze(0))
@@ -90,7 +111,7 @@ class AttentionBasedMultiModalFusion(nn.Module):
 
         fs_output = fusion(torch.cat((self.prev_output, fs_apply), dim = 1))
 
-        output, hidden = self.decoder(fs_output, hidden)
+        output, self.decoder_hidden = self.decoder(fs_output, self.decoder_hidden)
        
         self.prev_output = output
-        return output, hidden
+        return output
