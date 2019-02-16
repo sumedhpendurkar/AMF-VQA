@@ -89,17 +89,20 @@ class AttentionBasedMultiModalFusion(nn.Module):
        
         img_emb, self.hidden_img = self.VideoEmbedding(inputs[0], self.hidden_img)
         q_emb, self.hidden_q = self.QuestionEmbedding(inputs[1], self.hidden_q)
-
+        #Finding e(i, t) by passing S(i - 1) and h(t) through a linear layer without bias
+        #Finding alpha
         img_attn_weights = F.softmax(self.attn_img(torch.cat((self.hidden_img,  #should be hidden_img?
             self.decoder_hidden), 1)), dim = 1)
         q_attn_weights = F.softmax(self.attn_q(torch.cat((self.hidden_q,
             self.decoder_hidden), 1)), dim = 1)
 
+        #Finding c(i)
         img_attn_applied = torch.bmm(img_attn_weights.unsqueeze(0),
                 img_emb.unsqueeze(0))
         q_attn_applied = torch.bmm(q_attn_weights.unsqueeze(0),
                 q_emb.unsqueeze(0))
 
+        #Finding beta
         mod_attn_weights = F.softmax(self.attn_mod_img(torch.cat((img_emb, #concatenate img_emb with q_emb, how that I am not sure of
             self.prev_output), 1)), dim = 1)
 
