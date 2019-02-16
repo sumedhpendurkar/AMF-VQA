@@ -92,16 +92,20 @@ class AttentionBasedMultiModalFusion(nn.Module):
         q_emb, self.hidden_q = self.QuestionEmbedding(inputs[1], self.hidden_q)
 
         while self.prev_output != 'EOS':
+            #calculate e(i, t) by passing S(i - 1) and h(t) through a linear layer without bias
+            #calculate alpha
             img_attn_weights = F.softmax(self.attn_img(torch.cat((self.decoder_hidden,
                 self.hidden_img), 1)), dim = 1)
             q_attn_weights = F.softmax(self.attn_q(torch.cat((self.decoder_hidden,
                 self.hidden_q), 1)), dim = 1)
 
+            #calculate c(i)
             img_attn_applied = torch.bmm(img_attn_weights.unsqueeze(0),
                     img_emb.unsqueeze(0))
             q_attn_applied = torch.bmm(q_attn_weights.unsqueeze(0),
                     q_emb.unsqueeze(0))
 
+            #calculate beta
             tmp = attn_mod(self.decoder_hidden)
             mod_attn_weight_img_unnorm = (tmp + attn_mod_img(img_attn_applied)).tanh()
             mod_attn_weight_q_unnorm = (tmp + attn_mod_img(q_attn_applied)).tanh()
