@@ -105,13 +105,17 @@ class VideoQADataset(Dataset):
     self.video_dir = vid_path
     self.data_file = pd.read_csv(data_file, sep='\t')
     self.channels = 3
-    self.xSize = 1280
-    self.ySize = 720
+    self.xSize = 224  #Size of VGG Input
+    self.ySize = 224  #Size of VGG Input
+    self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    self.resize = transforms.Compose([transforms.ToPILImage(), 
+                                      transforms.Resize((224,224)), 
+                                      transforms.ToTensor(), self.normalize])
   def __getitem__(self, idx):
+    #Temp Code. Assuming some stuff here
     vid_name = os.path.join(self.video_dir, self.data_file.iloc[idx, 0])
     frames = VideoUtils.ConvertVideoToFrames(vid_name)
-    frames = Frames2Tensor(frames)
-        #Apply transforms if necessary to frames
+    frames = self.Frames2Tensor(frames) #Apply transforms if necessary to frames
     QA_pair = self.data_file.iloc[idx, 1:].tolist()
     return frames, QA_pair
   
@@ -125,8 +129,9 @@ class VideoQADataset(Dataset):
     timeDepth = len(frames)
     t_frames = torch.FloatTensor(self.channels, timeDepth, self.xSize, self.ySize)
     for f in range(timeDepth):
-        frame = torch.from_numpy(frames[f])
-        frame = frame.permute(2, 1, 0)
+        #Error in processing last frame leads to NoneType Error
+        frame = torch.from_numpy(frames[f]) #Convert the numpy to tensor
+        frame = self.resize(frame)  #Apply transforms to convert image
         t_frames[:, f, :, :] = frame
     return t_frames
 

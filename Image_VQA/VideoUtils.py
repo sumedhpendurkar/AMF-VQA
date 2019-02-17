@@ -33,11 +33,14 @@ def OutputFramesAsPics(frame_list):
 
     pass
 if __name__=="__main__":
-    frames = ConvertVideoToFrames('test.avi')
+    frames = ConvertVideoToFrames('/home/sameer/Desktop/Stuff/BTech Project/test.avi')
+    resize = transforms.Compose([transforms.ToPILImage(), transforms.Resize((200,200)), transforms.ToTensor()])
     timeDepth = len(frames)
-    t_frames = torch.FloatTensor(3, 3, 1280, 720)
-    for f in range(3):
+    print(timeDepth)
+    #Error in processing last frame leads to NoneType Errors
+    t_frames = torch.FloatTensor(3, timeDepth, 200, 200)
+    for f in range(timeDepth):
         frame = torch.from_numpy(frames[f])
-        frame = frame.permute(2, 1, 0)
+        frame = resize(frame)
         t_frames[:, f, :, :] = frame
     print(t_frames)
