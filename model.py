@@ -53,7 +53,7 @@ class WordEmbedding(nn.Module):
         
 class AttentionBasedMultiModalFusion(nn.Module):
 
-    def __init__(self, output_size, embedding_img, embedding_q, hidden_size, vocab,
+    def __init__(self, output_size, embedding_img, embedding_q, vocab,
             input_img, input_q, max_length_img, max_length_q, max_modalities):
 
         self.output_size = output_size
@@ -61,7 +61,6 @@ class AttentionBasedMultiModalFusion(nn.Module):
         self.max_length_q = max_length_q
         self.embedding_img = embedding_img
         self.embedding_q = embedding_q
-        self.hidden_size = hidden_size
         self.input_img = input_img
         self.input_q = input_q
         self.max_modalities = max_modalities
@@ -73,15 +72,15 @@ class AttentionBasedMultiModalFusion(nn.Module):
         attn_img = nn.Linear(self.output_size + self.embedding_img, self.max_length_img)
         attn_q = nn.Linear(self.output_size + self.embedding_q, self.max_length_q)
 
-        attn_mod = nn.Linear(self.output_size, self.max_modalities)
-        attn_mod_img = nn.Linear(self.embedding_img, self.max_modalities)
-        attn_mod_q = nn.Linear(self.embedding_q, self.max_modalities)
+        attn_mod = nn.Linear(self.output_size, 1) #self.max_modalities)
+        attn_mod_img = nn.Linear(self.embedding_img, 1, bias = False) #self.max_modalities)
+        attn_mod_q = nn.Linear(self.embedding_q, 1, bias = False) #self.max_modalities)
 
-        fusion_img = nn.Linear(self.embedding_img, self.hidden_size)
-        fusion_q = nn.Linear(self.embedding_q, self.hidden_size)
+        fusion_img = nn.Linear(self.embedding_img, self.output_size, bias = False)
+        fusion_q = nn.Linear(self.embedding_q, self.output_size, bias = False)
 
-        fusion = nn.Linear(self.output_size + self.hidden_size, self.output_size)
-        self.decoder = nn.LSTM(self.output_size, self.vocab_length)
+        fusion = nn.Linear(self.output_size, self.output_size)
+        self.decoder = nn.LSTM(self.output_size, self.output_size)
 
     def forward(self, inputs):
 
@@ -91,7 +90,8 @@ class AttentionBasedMultiModalFusion(nn.Module):
         img_emb, self.hidden_img = self.VideoEmbedding(inputs[0], self.hidden_img)
         q_emb, self.hidden_q = self.QuestionEmbedding(inputs[1], self.hidden_q)
 
-        while self.prev_output != 'EOS':
+        #TODO: store the results
+        while self.prev_output != '<EOS>':
             #calculate e(i, t) by passing S(i - 1) and h(t) through a linear layer without bias
             #calculate alpha
             img_attn_weights = F.softmax(self.attn_img(torch.cat((self.decoder_hidden,
@@ -108,7 +108,7 @@ class AttentionBasedMultiModalFusion(nn.Module):
             #calculate beta
             tmp = attn_mod(self.decoder_hidden)
             mod_attn_weight_img_unnorm = (tmp + attn_mod_img(img_attn_applied)).tanh()
-            mod_attn_weight_q_unnorm = (tmp + attn_mod_img(q_attn_applied)).tanh()
+            mod_attn_weight_q_unnorm = (tmp + attn_mod_q(q_attn_applied)).tanh()
             mod_attn_weights = F.softmax(torch.cat((mod_attn_weight_img_unnorm, 
                 mod_attn_weight_q_unnorm), dim = 0))
 
@@ -118,7 +118,7 @@ class AttentionBasedMultiModalFusion(nn.Module):
             fs_apply = torch.bmm(mod_attn_weights.unsqueeze(0),
                     torch.cat((d_img_i, d_q_i), dim = 1).unsqueeze(0)) #this should be done above, but not sure of dimensions
 
-            fs_output = (fusion(self.prev_output, dim = 1) + fs_apply).tanh()
+            fs_output = (fusion(self.prev_output) + fs_apply).tanh()
 
             output, self.decoder_hidden = self.decoder(fs_output, self.decoder_hidden)
            
