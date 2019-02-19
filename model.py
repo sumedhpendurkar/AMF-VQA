@@ -20,7 +20,7 @@ class VideoEmbedding(nn.Module):
     def forward(self, inputs, hidden):
 
         #maybe reshape it
-        outputs, hidden = self.lstm(inputs, hidden)
+        outputs, hidden = self.lstm(inputs.reshape(1, 1, -1), hidden)
         return outputs, hidden
 
     def init_hidden(self):
@@ -39,7 +39,7 @@ class WordEmbedding(nn.Module):
 
     def forward(self, inputs, hidden):
 
-        outputs, hidden = self.lstm(inputs, hidden)
+        outputs, hidden = self.lstm(inputs.view(1, 1, -1), hidden)
         return outputs, hidden
     
     def init_hidden(self):
@@ -94,10 +94,10 @@ class AttentionBasedMultiModalFusion(nn.Module):
         while self.prev_output != '<EOS>':
             #calculate e(i, t) by passing S(i - 1) and h(t) through a linear layer without bias
             #calculate alpha
-            img_attn_weights = F.softmax(self.attn_img(torch.cat((self.decoder_hidden,
-                self.hidden_img), 1)), dim = 1)
-            q_attn_weights = F.softmax(self.attn_q(torch.cat((self.decoder_hidden,
-                self.hidden_q), 1)), dim = 1)
+            img_attn_weights = F.softmax(self.attn_img(torch.cat((self.decoder_hidden[0],
+                self.hidden_img[0]), 1)), dim = 1)
+            q_attn_weights = F.softmax(self.attn_q(torch.cat((self.decoder_hidden[0],
+                self.hidden_q[0]), 1)), dim = 1)
 
             #calculate c(i)
             img_attn_applied = torch.bmm(img_attn_weights.unsqueeze(0),
