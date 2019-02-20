@@ -128,7 +128,8 @@ class AttentionBasedMultiModalFusion(nn.Module):
 
             output, self.decoder_hidden = self.decoder(fs_output, self.decoder_hidden)
            
-            self.prev_output = output
+            self.prev_output = F.log_softmax(output[0], dim=1)
+
         return output
 
     def init_hidden(self):
