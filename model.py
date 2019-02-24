@@ -76,76 +76,84 @@ class AttentionBasedMultiModalFusion(nn.Module):
         self.VideoEmbedding = VideoEmbedding(self.embedding_img, self.input_img)
         self.QuestionEmbedding = WordEmbedding(self.embedding_q, self.input_q)
 
-        self.attn_img = nn.Linear(self.output_size + self.embedding_img, self.max_length_img)
-        self.attn_q = nn.Linear(self.output_size + self.embedding_q, self.max_length_q)
+        self.attn_img = nn.Linear(self.output_size + self.embedding_img * 2, 1) #account for bidirectionality
+        self.attn_q = nn.Linear(self.output_size + self.embedding_q *2, 1) #account for bidirectioality
 
         self.attn_mod = nn.Linear(self.output_size, 1) #self.max_modalities)
-        self.attn_mod_img = nn.Linear(self.embedding_img, 1, bias = False) #self.max_modalities)
-        self.attn_mod_q = nn.Linear(self.embedding_q, 1, bias = False) #self.max_modalities)
+        self.attn_mod_img = nn.Linear(self.embedding_img * 2, 1, bias = False) #self.max_modalities)
+        self.attn_mod_q = nn.Linear(self.embedding_q * 2, 1, bias = False) #self.max_modalities)
 
-        self.fusion_img = nn.Linear(self.embedding_img, self.output_size, bias = False)
-        self.fusion_q = nn.Linear(self.embedding_q, self.output_size, bias = False)
+        self.fusion_img = nn.Linear(self.embedding_img * 2, self.output_size, bias = False)
+        self.fusion_q = nn.Linear(self.embedding_q * 2, self.output_size, bias = False)
 
         self.fusion = nn.Linear(self.output_size, self.output_size)
-        self.decoder = nn.LSTM(self.output_size, self.vocab_length)
+        self.decoder = nn.LSTM(self.output_size, self.output_size)
+        self.final = nn.Linear(self.output_size, self.vocab_length)
 
     def forward(self, inputs):
 
-        self.hidden_img = self.VideoEmbedding.init_hidden()
-        self.hidden_q = self.QuestionEmbedding.init_hidden()
+        hidden_img = self.VideoEmbedding.init_hidden()
+        hidden_q = self.QuestionEmbedding.init_hidden()
         self.prev_output = torch.zeros(1, 1, self.output_size)
-        self.decoder_hidden = self.init_hidden()
-        img_emb, self.hidden_img = self.VideoEmbedding.forward(inputs[0], self.hidden_img)
-        q_emb, self.hidden_q = self.QuestionEmbedding.forward(inputs[1], self.hidden_q)
+        decoder_hidden = self.init_hidden()
+        img_emb, hidden_img = self.VideoEmbedding.forward(inputs[0], hidden_img)
+        q_emb, hidden_q = self.QuestionEmbedding.forward(inputs[1], hidden_q)
 
         #TODO: store the results
         while True:#self.prev_output != '<EOS>':
             #calculate e(i, t) by passing S(i - 1) and h(t) through a linear layer without bias
-            #calculate alpha
-            print(self.decoder_hidden[0].shape)
-            print(self.hidden_img[0].shape)
+            #calculate alpha 
+            print(img_emb)
+            print(hidden_img[0])
+            print('-'*100)
             img_attn_weights = []
             q_attn_weights = []
-            for i in range(len(self.hidden_img)):
-                img_attn_weights.append(F.softmax(self.attn_img(torch.cat((self.decoder_hidden[0],
-                    self.hidden_img[i][0]), 1)), dim = 1))
-            for j in range(len(self.hidden_q)):
-                q_attn_weights.append(F.softmax(self.attn_q(torch.cat((self.decoder_hidden[0],
-                    self.hidden_q[0]), 1)), dim = 1))
-
-            img_attn_weights = torch.cat(img_attn_weights, dim =1)
-            q_attn_weights = torch.cat(q_attn_weights, dim =1)
+            for i in range(len(img_emb)):
+                img_attn_weights.append(self.attn_img(torch.cat((decoder_hidden[0][0],
+                    img_emb[i].view(1, 1, -1)[0]), 1)))
+            for i in range(len(q_emb)):
+                q_attn_weights.append(self.attn_q(torch.cat((decoder_hidden[0][0],
+                    q_emb[i].view(1, 1, -1)[0]), 1)))
+            
+            print(len(img_attn_weights))
+            img_attn_weights = F.softmax(torch.cat(img_attn_weights, 1), dim = 1)
+            q_attn_weights = F.softmax(torch.cat(q_attn_weights, 1), dim =1)
+      
             #calculate c(i)
-            img_attn_applied = torch.bmm(img_attn_weights.unsqueeze(0),
-                    img_emb.unsqueeze(0))
-            q_attn_applied = torch.bmm(q_attn_weights.unsqueeze(0),
-                    q_emb.unsqueeze(0))
+            img_attn_applied = torch.bmm(img_attn_weights.unsqueeze(1),
+                                         img_emb.view(1, -1, self.embedding_img * 2))
+            q_attn_applied = torch.bmm(q_attn_weights.unsqueeze(1),
+                                       q_emb.view(1, -1, self.embedding_q * 2))
 
             #calculate beta
-            tmp = attn_mod(self.decoder_hidden)
-            mod_attn_weight_img_unnorm = (tmp + attn_mod_img(img_attn_applied)).tanh()
-            mod_attn_weight_q_unnorm = (tmp + attn_mod_q(q_attn_applied)).tanh()
+            tmp = self.attn_mod(decoder_hidden[0])
+            mod_attn_weight_img_unnorm = (tmp + self.attn_mod_img(img_attn_applied)).tanh()
+            mod_attn_weight_q_unnorm = (tmp + self.attn_mod_q(q_attn_applied)).tanh()
+            
             mod_attn_weights = F.softmax(torch.cat((mod_attn_weight_img_unnorm, 
-                mod_attn_weight_q_unnorm), dim = 0))
+                mod_attn_weight_q_unnorm), dim = 2))
 
-            d_img_i = fusion_img(img_attn_applied)
-            d_q_i = fusion_q(q_attn_applied)
+            d_img_i = self.fusion_img(img_attn_applied)
+            d_q_i = self.fusion_q(q_attn_applied)
 
-            fs_apply = torch.bmm(mod_attn_weights.unsqueeze(0),
-                    torch.cat((d_img_i, d_q_i), dim = 1).unsqueeze(0)) #this should be done above, but not sure of dimensions
+            print(mod_attn_weights.shape)
+            print(torch.cat((d_img_i, d_q_i), dim = 1).shape)
+            fs_apply = torch.bmm(mod_attn_weights,
+                    torch.cat((d_img_i, d_q_i), dim = 1)) #this should be done above, but not sure of dimensions
 
-            fs_output = (fusion(self.decoder_hidden) + fs_apply).tanh()
+            print(decoder_hidden[0].shape)
+            fs_output = (self.fusion(decoder_hidden[0]) + fs_apply).tanh()
 
-            output, self.decoder_hidden = self.decoder(fs_output, self.decoder_hidden)
+            output, decoder_hidden = self.decoder(fs_output, decoder_hidden)
            
-            self.prev_output = F.log_softmax(output[0], dim=1)
+            self.prev_output = F.log_softmax(self.final(output[0]), dim=1)
+            print("First word outputted successfully!")
 
         return output
 
     def init_hidden(self):
-        return (torch.zeros(1, 1, self.vocab_length), 
-                torch.zeros(1, 1, self.vocab_length))
-
+        return (torch.zeros(1, 1, self.output_size), 
+                torch.zeros(1, 1, self.output_size))
 
 if __name__ == "__main__":
     v = AttentionBasedMultiModalFusion(4, 2, 2, 6, 4, 4, 5, 5, 2)
