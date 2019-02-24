@@ -157,4 +157,4 @@ class AttentionBasedMultiModalFusion(nn.Module):
 
 if __name__ == "__main__":
     v = AttentionBasedMultiModalFusion(4, 2, 2, 6, 4, 4, 5, 5, 2)
-    v.forward()
+    v.forward([torch.randn(6,4), torch.randn(2, 4)])
