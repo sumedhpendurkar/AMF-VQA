@@ -146,7 +146,7 @@ class AttentionBasedMultiModalFusion(nn.Module):
 
             output, decoder_hidden = self.decoder(fs_output, decoder_hidden)
            
-            self.prev_output = F.log_softmax(self.final(output[0]), dim=1)
+            self.prev_output = self.final(output[0])
             print("First word outputted successfully!")
 
         return output
@@ -154,6 +154,21 @@ class AttentionBasedMultiModalFusion(nn.Module):
     def init_hidden(self):
         return (torch.zeros(1, 1, self.output_size), 
                 torch.zeros(1, 1, self.output_size))
+
+def train(model, epochs=10, batch_size = 4, learning_rate = 0.0001):
+  optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+  metric = nn.CrossEntropyLoss()
+  for epoch in range(epochs):
+    for dataitem in (len(data) / batch_size):
+      # x_v, x_q, label = unpack dataitem
+      optimizer.zero_grad()
+      for i in range(batch_size):
+        predict = model.forward([x_v, x_q])
+        #may want to concatenate the words to apply cross entroppy and sum up the loss
+        loss += metric(predict, label)
+      loss.backward()
+      optimizer.step()
+
 
 if __name__ == "__main__":
     v = AttentionBasedMultiModalFusion(4, 2, 2, 6, 4, 4, 5, 5, 2)
