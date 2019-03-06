@@ -11,6 +11,9 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.parameter import Parameter
 import keras.backend as K
+import pickle
+
+import TextUtils
 
 class VideoEmbedding(nn.Module):
     
@@ -60,7 +63,8 @@ class WordEmbedding(nn.Module):
 class AttentionBasedMultiModalFusion(nn.Module):
 
     def __init__(self, output_size, embedding_img, embedding_q, vocab,
-            input_img, input_q, max_length_img, max_length_q, max_modalities):
+            input_img, input_q, max_length_img, max_length_q, max_modalities, 
+            vocab_path, glove_path):
 
         super(AttentionBasedMultiModalFusion, self).__init__()
         self.output_size = output_size
@@ -71,7 +75,12 @@ class AttentionBasedMultiModalFusion(nn.Module):
         self.input_img = input_img
         self.input_q = input_q
         self.max_modalities = max_modalities
-        self.vocab_length = vocab
+        self.vocabulary = self.load_vocabulary(vocab_path)
+        self.vocab_length = len(self.vocabulary)
+        self.glove_output = None
+
+        self.GloveEmbeds = nn.Embedding(self.vocab_length, self.embedding_q)
+        self.load_glove_weights(glove_path) #create matrix for glove embeddings
 
         self.VideoEmbedding = VideoEmbedding(self.embedding_img, self.input_img)
         self.QuestionEmbedding = WordEmbedding(self.embedding_q, self.input_q)
@@ -146,8 +155,11 @@ class AttentionBasedMultiModalFusion(nn.Module):
             fs_output = (self.fusion(decoder_hidden[0]) + fs_apply).tanh()
 
             output, decoder_hidden = self.decoder(fs_output, decoder_hidden)
-           
-            outputs.append(self.final(output[0]))
+            final_output = self.final(output[0])
+            index = torch.argmax(final_output, dim=0) #find index
+            self.glove_output = self.GloveEmbeds(index)
+            #self.glove_output is a 300D vector
+            outputs.append()
             print("First word outputted successfully!")
 
         return torch.cat(outputs, dim = 0)
@@ -155,6 +167,14 @@ class AttentionBasedMultiModalFusion(nn.Module):
     def init_hidden(self):
         return (torch.zeros(1, 1, self.output_size), 
                 torch.zeros(1, 1, self.output_size))
+
+    def load_vocabulary(self, vocab_path):
+        fp = open(vocab_path, 'rb')
+        return list(pickle.load(fp))
+    
+    def load_glove_weights(self, glove_path):
+        self.GloveEmbeds.weight.data.copy_(torch.fromnumpy(glove_path))
+
 
 def train(model, epochs=10, batch_size = 4, learning_rate = 0.0001):
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
