@@ -173,7 +173,7 @@ class AttentionBasedMultiModalFusion(nn.Module):
         return list(pickle.load(fp))
     
     def load_glove_weights(self, glove_path):
-        self.GloveEmbeds.weight.data.copy_(torch.fromnumpy(glove_path))
+        self.GloveEmbeds.weight.data.copy_(torch.from_numpy(glove_path))
 
 
 def train(model, epochs=10, batch_size = 4, learning_rate = 0.0001):
