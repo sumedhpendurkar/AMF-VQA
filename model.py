@@ -2,15 +2,34 @@ from __future__ import unicode_literals, print_function, division
 from io import open
 import unicodedata
 import string
-import re
+import re, os
 import random
 import torch
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
 from torch.autograd import Variable
+from torch.utils.data import Dataset, DataLoader
 from torch.nn.parameter import Parameter
 import keras.backend as K
+
+class VideoQADataset(Dataset):
+    def __init__(self, vid_path):
+    #MATFile Structure =   Video  =>  [No. of frames, embeddings]
+    #                   Question  =>  list(tokens,embeddings)
+    #                   Answer    =>  list(tokens,embeddings)
+        self.vid_dir = vid_path
+        self.num_samples = len(os.listdir(self.vid_dir)) 
+    def __len__(self):
+        return  self.num_samples#vid dir format "./embeddings"
+ 
+    def __getitem__(self, idx):
+        file_path = os.path.join(self.vid_dir, idx + ".mat")
+        data = sio.loadmat(file_path)
+        frames = torch.from_numpy(data["visual"])
+        quetion= [torch.from_numpy(x) for x in data["ques"][0]]
+        answer = data["answer"]
+        return [frames, question], answer
 
 class VideoEmbedding(nn.Module):
     
@@ -159,14 +178,13 @@ class AttentionBasedMultiModalFusion(nn.Module):
 def train(model, epochs=10, batch_size = 4, learning_rate = 0.0001):
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     metric = nn.CrossEntropyLoss()
+    dataset = VideoQADataset('dir')
+    loader = DataLoader(dataset, batch_size = 16, shuffle=True, num_workers = 4)
     for epoch in range(epochs):
-        for dataitem in (len(data) / batch_size):
-      # x_v, x_q, label = unpack dataitem
+        for data_x, data_y in loader:
             optimizer.zero_grad()
-            for i in range(batch_size):
-                predict = model.forward([x_v, x_q])
-        #may want to concatenate the words to apply cross entroppy and sum up the loss
-                loss += metric(predict, label)
+            predict = model.forward(data_x)
+            loss = metric(predict, label)
             loss.backward()
             optimizer.step()
 
